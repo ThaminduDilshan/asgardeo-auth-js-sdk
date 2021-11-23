@@ -28,6 +28,7 @@ import {
 import { DataLayer } from "../data";
 import { AsgardeoAuthException, AsgardeoAuthNetworkException } from "../exception";
 import { AuthenticationHelper } from "../helpers";
+import { HttpsClient } from "../https-client/axios-https-client";
 import {
     AuthClientConfig,
     AuthorizationURLParams,
@@ -45,12 +46,14 @@ export class AuthenticationCore<T> {
     private _config: () => Promise<AuthClientConfig>;
     private _oidcProviderMetaData: () => Promise<OIDCProviderMetaData>;
     private _authenticationHelper: AuthenticationHelper<T>;
+    private _httpsClient: () => Promise<HttpsClient<T>>;
 
     public constructor(dataLayer: DataLayer<T>) {
         this._authenticationHelper = new AuthenticationHelper(dataLayer);
         this._dataLayer = dataLayer;
         this._config = async () => await this._dataLayer.getConfigData();
         this._oidcProviderMetaData = async () => await this._dataLayer.getOIDCProviderMetaData();
+        this._httpsClient = async () => await HttpsClient.getInstance(this._dataLayer);
     }
 
     public async getAuthorizationURL(config?: AuthorizationURLParams): Promise<string> {
@@ -153,7 +156,9 @@ export class AuthenticationCore<T> {
             await this._dataLayer.removeTemporaryDataParameter(PKCE_CODE_VERIFIER);
         }
 
-        return axios
+        const httpsClient = await this._httpsClient();
+
+        return httpsClient.getAxios()
             .post(tokenEndpoint, body.join("&"), {
                 headers: AuthenticationUtils.getTokenRequestHeaders(),
                 withCredentials: configData.sendCookiesInRequests
@@ -232,7 +237,9 @@ export class AuthenticationCore<T> {
             body.push(`client_secret=${configData.clientSecret}`);
         }
 
-        return axios
+        const httpsClient = await this._httpsClient();
+
+        return httpsClient.getAxios()
             .post(tokenEndpoint, body.join("&"), {
                 headers: AuthenticationUtils.getTokenRequestHeaders(),
                 withCredentials: configData.sendCookiesInRequests
@@ -293,7 +300,9 @@ export class AuthenticationCore<T> {
         body.push(`token=${(await this._dataLayer.getSessionData()).access_token}`);
         body.push("token_type_hint=access_token");
 
-        return axios
+        const httpsClient = await this._httpsClient();
+
+        return httpsClient.getAxios()
             .post(revokeTokenEndpoint, body.join("&"), {
                 headers: AuthenticationUtils.getTokenRequestHeaders(),
                 withCredentials: configData.sendCookiesInRequests
@@ -365,6 +374,8 @@ export class AuthenticationCore<T> {
             return `${key}=${newValue}`;
         }));
 
+        const httpsClient = await this._httpsClient();
+
         const requestConfig: AxiosRequestConfig = {
             data: data.join("&"),
             headers: {
@@ -372,7 +383,8 @@ export class AuthenticationCore<T> {
             },
             method: "POST",
             url: tokenEndpoint,
-            withCredentials: configData.sendCookiesInRequests
+            withCredentials: configData.sendCookiesInRequests,
+            httpsAgent: httpsClient.getHttpsAgent()
         };
 
         if (customGrantParams.attachToken) {
@@ -478,7 +490,9 @@ export class AuthenticationCore<T> {
 
         const wellKnownEndpoint = await this._authenticationHelper.resolveWellKnownEndpoint();
 
-        return axios
+        const httpsClient = await this._httpsClient();
+
+        return httpsClient.getAxios()
             .get(wellKnownEndpoint)
             .then(async (response: { data: OIDCProviderMetaData; status: number }) => {
                 if (response.status !== 200) {

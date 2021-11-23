@@ -37,16 +37,19 @@ import { DataLayer } from "../data";
 import { AsgardeoAuthException, AsgardeoAuthNetworkException } from "../exception";
 import { AuthClientConfig, OIDCEndpointsInternal, OIDCProviderMetaData, TokenResponse } from "../models";
 import { AuthenticationUtils, CryptoUtils } from "../utils";
+import { HttpsClient } from "../https-client/axios-https-client";
 
 export class AuthenticationHelper<T> {
     private _dataLayer: DataLayer<T>;
     private _config: () => Promise<AuthClientConfig>;
     private _oidcProviderMetaData: () => Promise<OIDCProviderMetaData>;
+    private _httpsClient: () => Promise<HttpsClient<T>>;
 
     public constructor(dataLayer: DataLayer<T>) {
         this._dataLayer = dataLayer;
         this._config = async () => await this._dataLayer.getConfigData();
         this._oidcProviderMetaData = async () => await this._dataLayer.getOIDCProviderMetaData();
+        this._httpsClient = async () => await HttpsClient.getInstance(this._dataLayer);
     }
 
     public async resolveWellKnownEndpoint(): Promise<string> {
@@ -118,7 +121,9 @@ export class AuthenticationHelper<T> {
             );
         }
 
-        return axios
+        const httpsClient = await this._httpsClient();
+
+        return httpsClient.getAxios()
             .get(jwksEndpoint, { withCredentials: configData?.sendCookiesInRequests })
             .then(async (response) => {
                 if (response.status !== 200) {

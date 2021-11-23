@@ -44,6 +44,10 @@ export interface StrictAuthClientConfig {
      *
      */
     sendCookiesInRequests?: boolean;
+    /**
+     * Allows to provide a certificate to perform ssl communications.
+     */
+    certificate?: string;
 }
 
 export type AuthClientConfig<T = unknown> = StrictAuthClientConfig & T;
