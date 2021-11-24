@@ -15,6 +15,7 @@
         "declarationMap": true,
         "baseUrl": "/",
         "strict": true,
+        "strictPropertyInitialization": false,
         "paths": {
             "*": ["types/*"]
         },
