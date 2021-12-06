@@ -19,16 +19,16 @@
 import base64url from "base64url";
 import WordArray from "crypto-js/lib-typedarrays";
 import sha256 from "fast-sha256";
-// Importing from node_modules since rollup doesn't support export attribute of `package.json` yet.
 import randombytes from "randombytes";
-import parseJwk from "../../node_modules/jose/dist/browser/jwk/parse";
-import jwtVerify, { KeyLike } from "../../node_modules/jose/dist/browser/jwt/verify";
 import { RuntimeEnvironments } from "../constants";
 import { AsgardeoAuthException } from "../exception";
 import { DecodedIDTokenPayload, JWKInterface } from "../models";
 const nodeRandomBytes = require("secure-random-bytes");
+const nodeJose = require("node-jose");
 
 export class CryptoUtils {
+    private static _keystore: any;
+
     // eslint-disable-next-line @typescript-eslint/no-empty-function
     private constructor() {}
     /**
@@ -86,12 +86,16 @@ export class CryptoUtils {
      * @returns {any} public key.
      */
     /* eslint-disable @typescript-eslint/no-explicit-any */
-    public static getJWKForTheIdToken(jwtHeader: string, keys: JWKInterface[]): Promise<KeyLike> {
+    public static getJWKForTheIdToken(jwtHeader: string, keys: JWKInterface[]): Promise<any> {
         const headerJSON = JSON.parse(base64url.decode(jwtHeader, "utf8"));
 
         for (const key of keys) {
             if (headerJSON.kid === key.kid) {
-                return parseJwk({
+                if (!CryptoUtils._keystore) {
+                    CryptoUtils._keystore = nodeJose.JWK.createKeyStore();
+                }
+
+                return CryptoUtils._keystore.get({
                     alg: key.alg,
                     e: key.e,
                     kty: key.kty,
@@ -127,33 +131,34 @@ export class CryptoUtils {
      */
     public static isValidIdToken(
         idToken: string,
-        jwk: KeyLike,
+        jwk: any,
         clientID: string,
         issuer: string,
         username: string,
         clockTolerance: number | undefined
     ): Promise<boolean> {
-        return jwtVerify(idToken, jwk, {
+        return nodeJose.JWS.createVerify(jwk, {
             algorithms: this.getSupportedSignatureAlgorithms(),
             audience: clientID,
             clockTolerance: clockTolerance,
             issuer: issuer,
             subject: username
         })
-            .then(() => {
-                return Promise.resolve(true);
-            })
-            .catch((error) => {
-                return Promise.reject(
-                    new AsgardeoAuthException(
-                        "CRYPTO_UTIL-IVIT-IV02",
-                        "crypto-utils",
-                        "isValidIdToken",
-                        "Validating ID token failed",
-                        error
-                    )
-                );
-            });
+        .verify(idToken)
+        .then(() => {
+            return Promise.resolve(true);
+        })
+        .catch((error) => {
+            return Promise.reject(
+                new AsgardeoAuthException(
+                    "CRYPTO_UTIL-IVIT-IV02",
+                    "crypto-utils",
+                    "isValidIdToken",
+                    "Validating ID token failed",
+                    error
+                )
+            );
+        });
     }
 
     /**

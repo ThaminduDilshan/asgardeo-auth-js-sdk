@@ -16,7 +16,6 @@
  * under the License.
  */
 
-import { KeyLike } from "crypto";
 import axios, { AxiosError, AxiosResponse } from "axios";
 import {
     AUTHORIZATION_ENDPOINT,
@@ -143,7 +142,7 @@ export class AuthenticationHelper<T> {
                 }
 
                 return CryptoUtils.getJWKForTheIdToken(idToken.split(".")[0], response.data.keys)
-                    .then(async (jwk: KeyLike) => {
+                    .then(async (jwk: any) => {
                         return CryptoUtils.isValidIdToken(
                             idToken,
                             jwk,
