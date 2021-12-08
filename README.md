@@ -37,6 +37,7 @@
     -   [updateConfig](#updateConfig)
 -   [Data Storage](#data-storage)
     -   [Data Layer](#data-layer)
+-   [Crypto Utils](#crypto-utils)
 -   [Models](#models)
     -   [AuthClientConfig\<T>](#AuthClientConfigT)
     -   [Store](#Store)
@@ -50,6 +51,7 @@
     -   [OIDCProviderMetaData](#OIDCProviderMetaData)
     -   [TemporaryData](#TemporaryData)
     -   [BasicUserInfo](#BasicUserInfo)
+    -   [JWKInterface](#JWKInterface)
 -   [Develop](#develop)
 -   [Contribute](#contribute)
 -   [License](#license)
@@ -145,7 +147,11 @@ auth.requestAccessToken()
 
 ```javascript
 // The SDK provides a client that can be used to carry out the authentication.
-import { AsgardeoAuthClient } from "@asgardeo/auth-js";
+import { AsgardeoAuthClient, AsgardeoAuthException } from "@asgardeo/auth-js";
+import base64url from "base64url";
+import { importJWK } from "jose";
+import sha256 from "fast-sha256";
+import randombytes from "randombytes";
 
 // Create a config object containing the necessary configurations.
 const config = {
@@ -173,11 +179,100 @@ class SessionStore {
     }
 }
 
-// Instantiate the SessionStore class
-const store = new SessionStore();
+// Create a CryptoUtils class to provide crypto functions.
+class CryptoUtils {
+    // Generate code verifier.
+    getCodeVerifier() {
+        return base64url.encode(
+            randombytes(32)
+        ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    }
 
-// Instantiate the AsgardeoAuthClient and pass the store object as an argument into the constructor.
-const auth = new AsgardeoAuthClient(store);
+    // Derive code challenge from the code verifier.
+    getCodeChallenge(verifier) {
+        return base64url.encode(
+            new Buffer(sha256(new TextEncoder().encode(verifier)))
+        ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    }
+
+    // Get JWK used for the id_token.
+    getJWKForTheIdToken(jwtHeader, keys) {
+        const headerJSON = JSON.parse(base64url.decode(jwtHeader, "utf8"));
+
+        for (const key of keys) {
+            if (headerJSON.kid === key.kid) {
+                return importJWK({
+                    alg: key.alg,
+                    e: key.e,
+                    kty: key.kty,
+                    n: key.n
+                });
+            }
+        }
+
+        return Promise.reject(
+            new AsgardeoAuthException(
+                "CRYPTO_UTIL-GTFTIT-IV01",
+                "crypto-utils",
+                "getJWKForTheIdToken",
+                "kid not found.",
+                "Failed to find the 'kid' specified in the id_token. 'kid' found in the header : " +
+                    headerJSON.kid +
+                    ", Expected values: " +
+                    keys.map((key) => key.kid).join(", ")
+            )
+        );
+    }
+
+    // Verify id token.
+    isValidIdToken(idToken, jwk, clientID, issuer, username, clockTolerance, supportedAlgorithms) {
+        return jwtVerify(idToken, jwk, {
+            algorithms: supportedAlgorithms,
+            audience: clientID,
+            clockTolerance: clockTolerance,
+            issuer: issuer,
+            subject: username
+        })
+            .then(() => {
+                return Promise.resolve(true);
+            })
+            .catch((error) => {
+                return Promise.reject(
+                    new AsgardeoAuthException(
+                        "CRYPTO_UTIL-IVIT-IV02",
+                        "crypto-utils",
+                        "isValidIdToken",
+                        "Validating ID token failed",
+                        error
+                    )
+                );
+            });
+    }
+
+    // Decodes the payload of an id token.
+    decodeIDToken(idToken) {
+        try {
+            const utf8String = base64url.decode(idToken.split(".")[1], "utf8");
+            const payload = JSON.parse(utf8String);
+            return payload;
+        } catch (error) {
+            throw new AsgardeoAuthException(
+                "CRYPTO_UTIL-DIT-IV01",
+                "crypto-utils",
+                "decodeIDToken",
+                "Decoding ID token failed.",
+                error
+            );
+        }
+    }
+}
+
+// Instantiate the SessionStore and CryptoUtils classes.
+const store = new SessionStore();
+const cryptoUtils = new CryptoUtils();
+
+// Instantiate the AsgardeoAuthClient and pass the store object and cryptoUtils as arguments into the constructor.
+const auth = new AsgardeoAuthClient(store, cryptoUtils);
 
 // Initialize the instance with the config object.
 auth.initialize(config);
@@ -242,13 +337,17 @@ You can instantiate the class and use the object to access the provided methods.
 ### constructor
 
 ```TypeScript
-new AsgardeoAuthClient(store: Store);
+new AsgardeoAuthClient(store: Store, cryptoUtils: CryptoUtils);
 ```
 
 #### Arguments
 1. store: [`Store`](#Store)
 
     This is the object of interface [`Store`](#Store) that is used by the SDK to store all the necessary data used ranging from the configuration data to the access token. You can implement the Store to create a class with your own implementation logic and pass an instance of the class as the second argument. This way, you will be able to get the data stored in your preferred place. To know more about implementing the [`Store`](#Store) interface, refer to the [Data Storage](#data-storage) section.
+
+2. cryptoUtils: [`CryptoUtils`](#CryptoUtils)
+
+    This is the object of interface [`CryptoUtils`](#CryptoUtils) that is used by the SDK to perform crypto functionalities. You can implement the CryptoUtils to create a class with your own implementation logic and pass an instance of the class as the second argument. To know more about implementing the [`CryptoUtils`](#CryptoUtils) interface, refer to the [Crypto Utils](#crypto-utils) section.
 
 #### Description
 
@@ -271,9 +370,97 @@ class SessionStore implements Store {
     }
 }
 
-const store = new SessionStore();
+class CryptoUtils {
+    // Generate code verifier.
+    getCodeVerifier() {
+        return base64url.encode(
+            randombytes(32)
+        ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    }
 
-const auth = new AsgardeoAuthClient(store);
+    // Derive code challenge from the code verifier.
+    getCodeChallenge(verifier) {
+        return base64url.encode(
+            new Buffer(sha256(new TextEncoder().encode(verifier)))
+        ).replace(/\+/g, "-").replace(/\//g, "_").replace(/=/g, "");
+    }
+
+    // Get JWK used for the id_token.
+    getJWKForTheIdToken(jwtHeader, keys) {
+        const headerJSON = JSON.parse(base64url.decode(jwtHeader, "utf8"));
+
+        for (const key of keys) {
+            if (headerJSON.kid === key.kid) {
+                return importJWK({
+                    alg: key.alg,
+                    e: key.e,
+                    kty: key.kty,
+                    n: key.n
+                });
+            }
+        }
+
+        return Promise.reject(
+            new AsgardeoAuthException(
+                "CRYPTO_UTIL-GTFTIT-IV01",
+                "crypto-utils",
+                "getJWKForTheIdToken",
+                "kid not found.",
+                "Failed to find the 'kid' specified in the id_token. 'kid' found in the header : " +
+                    headerJSON.kid +
+                    ", Expected values: " +
+                    keys.map((key) => key.kid).join(", ")
+            )
+        );
+    }
+
+    // Verify id token.
+    isValidIdToken(idToken, jwk, clientID, issuer, username, clockTolerance, supportedAlgorithms) {
+        return jwtVerify(idToken, jwk, {
+            algorithms: supportedAlgorithms,
+            audience: clientID,
+            clockTolerance: clockTolerance,
+            issuer: issuer,
+            subject: username
+        })
+            .then(() => {
+                return Promise.resolve(true);
+            })
+            .catch((error) => {
+                return Promise.reject(
+                    new AsgardeoAuthException(
+                        "CRYPTO_UTIL-IVIT-IV02",
+                        "crypto-utils",
+                        "isValidIdToken",
+                        "Validating ID token failed",
+                        error
+                    )
+                );
+            });
+    }
+
+    // Decodes the payload of an id token.
+    decodeIDToken(idToken) {
+        try {
+            const utf8String = base64url.decode(idToken.split(".")[1], "utf8");
+            const payload = JSON.parse(utf8String);
+            return payload;
+        } catch (error) {
+            throw new AsgardeoAuthException(
+                "CRYPTO_UTIL-DIT-IV01",
+                "crypto-utils",
+                "decodeIDToken",
+                "Decoding ID token failed.",
+                error
+            );
+        }
+    }
+}
+
+const store = new SessionStore();
+const cryptoUtils = new CryptoUtils();
+
+const auth = new AsgardeoAuthClient(store, cryptoUtils);
 ```
 
 ---
@@ -875,6 +1062,18 @@ All these four keys get methods to set, get and remove data as whole. In additio
 |removeConfigDataParameter |key: keyof [`AuthClientConfig<T>`](#AuthClientConfigT) | `Promise<void>` | Removes the data with the specified key from the config data.|
 |removeTemporaryDataParameter |key: `string` | `Promise<void>` | Removes the data with the specified key from the temporary data.|
 
+## CryptoUtils
+
+Since the SDK was developed with the view of being able to support various platforms such as mobile apps, browsers and node JS servers, the SDK allows developers to use their preferred crypto libraries. To that end, the SDK allows you to pass a cryptoUtils object when instantiating the `AsgardeoAuthClient`. The SDK provides a CryptoUtils interface that you can implement to create your own CryptoUtils class. This cryptoUtils object should contains the following methods that can be used to perform crypto functions.
+
+|Method|Arguments|Returns|Description|
+|--|--|--|--|
+| getCodeVerifier |  | `string` | Generate and retrieve the code verifier. |
+| getCodeChallenge | verifier: `string` | `string` | Derive code challenge from the code verifier. |
+| getJWKForTheIdToken | jwtHeader: `string`, keys: [`JWKInterface[]`](#JWKInterface) | `Promise<any>` | Get Json Web Key (JWK) used for the id token. |
+| isValidIdToken | idToken: `string`, jwk: `any`, clientID: `string`, issuer: `string`, username: `string`, clockTolerance: `number \| undefined`, supportedAlgorithms: `string[]` | `Promise<boolean>` | Verify the id token. |
+| decodeIDToken | idToken: `string` | [`DecodedIDTokenPayload`](#DecodedIDTokenPayload) | Decode the payload of an id token. |
+
 ## Models
 
 ### AuthClientConfig\<T>
@@ -898,7 +1097,6 @@ This model has the following attributes.
 |`validateIDToken`|Optional| `boolean`|`true`|Allows you to enable/disable JWT ID token validation after obtaining the ID token.|
 |`clockTolerance`|Optional| `number`|`60`|Allows you to configure the leeway when validating the id_token.|
 |`sendCookiesInRequests`|Optional| `boolean`|`true`|Specifies if cookies should be sent in the requests.|
-|`runtimeEnvironment`|Optional| `string`|`BROWSER`|Specifies the runtime environment of the application. Available environments:  `BROWSER`, `NODE` and `REACT_NATIVE`.|
 
 The `AuthClientConfig<T>` can be extended by passing an interface as the generic type. For example, if you want to add an attribute called `foo` to the config object, you can create an interface called `Bar` and pass that as the generic type into the `AuthClientConfig<T>` interface.
 
@@ -1079,6 +1277,17 @@ type StoreValue = string | string[] | boolean | number | OIDCEndpoints;
 | `sub`           | `string` | The `uid` corresponding to the user to whom the ID token belongs to.                               |
 
 In addition to the above attributes, this object will also contain any other claim found in the ID token payload.
+
+### JWKInterface
+
+| Attribute | Type | Description |
+| :-------------- | :------- | :------------------------------------------------------------------------------------------------- |
+| `kty` | `string` | The family of cryptographic algorithms. |
+| `e` | `string` | The exponent for the RSA public key. |
+| `use` | `string` | How the key was meant to be used; `sig` is used for the signature. |
+| `kid` | `string` | The key identifier. |
+| `alg` | `string` | The cryptographic algorithm used. |
+| `n` | `string` | The modulus for the RSA public key. |
 
 ## Develop
 
