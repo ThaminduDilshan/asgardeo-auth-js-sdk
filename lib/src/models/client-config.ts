@@ -47,7 +47,7 @@ export interface StrictAuthClientConfig {
     /**
      * Allows to provide a certificate to perform ssl communications.
      */
-    certificate?: string;
+    certificate?: string | Buffer | Array<string | Buffer>;
 }
 
 export type AuthClientConfig<T = unknown> = StrictAuthClientConfig & T;

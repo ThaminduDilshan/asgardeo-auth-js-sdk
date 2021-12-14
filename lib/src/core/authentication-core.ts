@@ -381,10 +381,10 @@ export class AuthenticationCore<T> {
             headers: {
                 ...AuthenticationUtils.getTokenRequestHeaders()
             },
+            httpsAgent: httpsClient.getHttpsAgent(),
             method: "POST",
             url: tokenEndpoint,
-            withCredentials: configData.sendCookiesInRequests,
-            httpsAgent: httpsClient.getHttpsAgent()
+            withCredentials: configData.sendCookiesInRequests
         };
 
         if (customGrantParams.attachToken) {

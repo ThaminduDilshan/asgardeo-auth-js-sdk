@@ -17,7 +17,7 @@
  */
 
 import { KeyLike } from "crypto";
-import axios, { AxiosError, AxiosResponse } from "axios";
+import { AxiosError, AxiosResponse } from "axios";
 import {
     AUTHORIZATION_ENDPOINT,
     CLIENT_ID_TAG,
@@ -35,9 +35,9 @@ import {
 } from "../constants";
 import { DataLayer } from "../data";
 import { AsgardeoAuthException, AsgardeoAuthNetworkException } from "../exception";
+import { HttpsClient } from "../https-client/axios-https-client";
 import { AuthClientConfig, OIDCEndpointsInternal, OIDCProviderMetaData, TokenResponse } from "../models";
 import { AuthenticationUtils, CryptoUtils } from "../utils";
-import { HttpsClient } from "../https-client/axios-https-client";
 
 export class AuthenticationHelper<T> {
     private _dataLayer: DataLayer<T>;

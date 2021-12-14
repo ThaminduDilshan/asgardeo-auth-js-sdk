@@ -16,12 +16,13 @@
  * under the License.
  */
 
-import axios, { AxiosInstance } from 'axios';
-import https, { Agent } from 'https';
-import { AuthClientConfig } from '..';
-import { DataLayer } from '../data';
+import https, { Agent } from "https";
+import axios, { AxiosInstance } from "axios";
+import { AuthClientConfig } from "..";
+import { DataLayer } from "../data";
 
 export class HttpsClient<T> {
+
     private static httpsClient: HttpsClient<any>;
     private axiosInstance: AxiosInstance;
     private httpsAgent: Agent;
@@ -29,11 +30,13 @@ export class HttpsClient<T> {
     private _config: () => Promise<AuthClientConfig>;
 
     private constructor(dataLayer: DataLayer<T>) {
+
         this._dataLayer = dataLayer;
         this._config = async () => await this._dataLayer.getConfigData();
     }
 
     public static async getInstance(dataLayer: DataLayer<any>): Promise<HttpsClient<any>> {
+
         if (this.httpsClient) {
             return this.httpsClient;
         }
@@ -47,12 +50,12 @@ export class HttpsClient<T> {
             });
 
             this.httpsClient.axiosInstance = axios.create({
-                withCredentials: true,
-                httpsAgent: this.httpsClient.httpsAgent
+                httpsAgent: this.httpsClient.httpsAgent,
+                withCredentials: configData.sendCookiesInRequests
             });
         } else {
             this.httpsClient.axiosInstance = axios.create({
-                withCredentials: true
+                withCredentials: configData.sendCookiesInRequests
             });
         }
 
@@ -60,10 +63,12 @@ export class HttpsClient<T> {
     }
 
     public getAxios(): AxiosInstance {
+
         return this.axiosInstance;
     }
 
     public getHttpsAgent(): Agent {
+
         return this.httpsAgent;
     }
 }
